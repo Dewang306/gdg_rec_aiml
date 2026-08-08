@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Medicine Price Finder</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 16px; background: #f4f6f8; color: #1a1a1a; }
+  h1 { font-size: 22px; }
+  .search-box { display: flex; gap: 8px; margin-bottom: 24px; }
+  input { flex: 1; padding: 10px; font-size: 15px; border: 1px solid #ccc; border-radius: 6px; }
+  button { padding: 10px 18px; font-size: 15px; border: none; border-radius: 6px; background: #2563eb; color: white; cursor: pointer; }
+  button:hover { background: #1d4ed8; }
+  .card { background: white; padding: 16px; border-radius: 8px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .price-row { display: flex; justify-content: space-between; font-size: 15px; margin: 4px 0; }
+  .error { color: #b91c1c; }
+  ul { padding-left: 18px; }
+  li { margin: 6px 0; }
+</style>
+</head>
+<body>
+
+<h1>Medicine Price & Generic Alternative Finder</h1>
+
+<div class="search-box">
+  <input id="medName" type="text" placeholder="Enter medicine name, e.g. Augmentin 625 Duo Tablet">
+  <button onclick="search()">Search</button>
+</div>
+
+<div id="results"></div>
+
+<script>
+const API_BASE = "";  // same origin since backend serves this file
+
+async function search() {
+  const name = document.getElementById("medName").value.trim();
+  const resultsDiv = document.getElementById("results");
+  resultsDiv.innerHTML = "";
+  if (!name) return;
+
+  try {
+    const priceRes = await fetch(`${API_BASE}/predict-price?medicine_name=${encodeURIComponent(name)}`);
+    if (!priceRes.ok) {
+      const err = await priceRes.json();
+      resultsDiv.innerHTML = `<p class="error">${err.detail}</p>`;
+      return;
+    }
+    const priceData = await priceRes.json();
+
+    const altRes = await fetch(`${API_BASE}/alternatives?medicine_name=${encodeURIComponent(name)}`);
+    const altData = altRes.ok ? await altRes.json() : { alternatives: [] };
+
+    resultsDiv.innerHTML = `
+      <div class="card">
+        <h3>${priceData.medicine_name}</h3>
+        <div class="price-row"><span>Actual price</span><b>₹${priceData.actual_price}</b></div>
+        <div class="price-row"><span>Predicted fair price</span><b>₹${priceData.predicted_price}</b></div>
+      </div>
+      <div class="card">
+        <h3>Price comparison</h3>
+        <canvas id="priceChart" height="120"></canvas>
+      </div>
+      <div class="card">
+        <h3>Cheaper alternatives (same composition)</h3>
+        <ul id="altList"></ul>
+      </div>
+    `;
+
+    const altList = document.getElementById("altList");
+    if (altData.alternatives.length === 0) {
+      altList.innerHTML = "<li>No cheaper alternatives found in this dataset.</li>";
+    } else {
+      altData.alternatives.forEach(a => {
+        const li = document.createElement("li");
+        li.textContent = `${a.brand_name} — ${a.manufacturer} — ₹${a.price_inr}`;
+        altList.appendChild(li);
+      });
+    }
+
+    const labels = [priceData.medicine_name, ...altData.alternatives.map(a => a.brand_name)];
+    const prices = [priceData.actual_price, ...altData.alternatives.map(a => a.price_inr)];
+
+    new Chart(document.getElementById("priceChart"), {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [{ label: "Price (₹)", data: prices, backgroundColor: "#2563eb" }]
+      },
+      options: { plugins: { legend: { display: false } } }
+    });
+
+  } catch (e) {
+    resultsDiv.innerHTML = `<p class="error">Something went wrong: ${e.message}</p>`;
+  }
+}
+
+document.getElementById("medName").addEventListener("keydown", e => {
+  if (e.key === "Enter") search();
+});
+</script>
+
+</body>
+</html>
